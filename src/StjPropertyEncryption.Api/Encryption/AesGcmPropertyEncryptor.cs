@@ -41,6 +41,13 @@ public sealed class AesGcmPropertyEncryptor : IPropertyEncryptor
     {
         var payloadBytes = Convert.FromBase64String(payload);
 
+        if (payloadBytes.Length < NonceSize + TagSize)
+        {
+            throw new CryptographicException(
+                $"Ciphertext payload is {payloadBytes.Length} bytes; expected at least {NonceSize + TagSize} " +
+                "(nonce + authentication tag). This isn't a payload this encryptor produced.");
+        }
+
         var nonce = payloadBytes[..NonceSize];
         var tag = payloadBytes[NonceSize..(NonceSize + TagSize)];
         var ciphertext = payloadBytes[(NonceSize + TagSize)..];

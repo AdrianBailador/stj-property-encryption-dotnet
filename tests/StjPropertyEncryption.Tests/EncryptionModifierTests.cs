@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Configuration;
@@ -149,6 +150,31 @@ public class EncryptionModifierTests
         Assert.Contains("isn't valid ciphertext", ex.Message);
     }
 
+    [Fact]
+    public void Decrypting_a_too_short_payload_fails_clearly_instead_of_throwing_an_index_error()
+    {
+        var ex = Assert.Throws<CryptographicException>(() => Encryptor.Decrypt("AAAA"));
+
+        Assert.Contains("expected at least", ex.Message);
+    }
+
+    [Fact]
+    public void A_property_with_no_setter_deserializes_as_ciphertext_instead_of_the_original_value()
+    {
+        // GetOnlyGreeting has no parameterless constructor, so System.Text.Json binds
+        // Message through the constructor parameter, not through JsonPropertyInfo.Set —
+        // which is null here, so the modifier never gets a chance to decrypt on the way in.
+        var original = new GetOnlyGreeting("hello");
+
+        var json = JsonSerializer.Serialize(original, EncryptedOptions);
+        Assert.DoesNotContain("hello", json);
+
+        var roundTripped = JsonSerializer.Deserialize<GetOnlyGreeting>(json, EncryptedOptions);
+
+        Assert.NotNull(roundTripped);
+        Assert.NotEqual("hello", roundTripped!.Message);
+    }
+
     private static IPropertyEncryptor CreateEncryptor(string key = "Y1qgjUkxxytE5zyGHhQkBLDBf8iNKgtupRAe1v5SQnU=")
     {
         var configuration = new ConfigurationBuilder()
@@ -186,5 +212,13 @@ public class EncryptionModifierTests
         public required int Id { get; set; }
 
         public required List<Shipment> Shipments { get; set; }
+    }
+
+    private sealed class GetOnlyGreeting
+    {
+        public GetOnlyGreeting(string message) => Message = message;
+
+        [Encrypted]
+        public string Message { get; }
     }
 }

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/StjPropertyEncryption.Api/StjPropertyEncryption.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/StjPropertyEncryption.Tests/StjPropertyEncryption.Tests.csproj" />
+  </Folder>
+</Solution>

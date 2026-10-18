@@ -1,0 +1,6 @@
+@StjPropertyEncryption.Api_HostAddress = http://localhost:5197
+
+GET {{StjPropertyEncryption.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

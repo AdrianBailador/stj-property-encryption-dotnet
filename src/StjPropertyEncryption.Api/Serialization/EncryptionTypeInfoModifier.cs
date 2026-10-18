@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using StjPropertyEncryption.Api.Encryption;
@@ -66,12 +67,13 @@ public static class EncryptionTypeInfoModifier
                         {
                             plaintext = encryptor.Decrypt(ciphertext);
                         }
-                        catch (Exception ex)
+                        catch (Exception ex) when (ex is FormatException or CryptographicException)
                         {
-                            // Covers invalid base64, a too-short payload, and an AES-GCM
-                            // authentication tag mismatch (wrong key or tampered data) alike —
-                            // to the caller, all three mean the same thing: this wasn't
-                            // ciphertext this encryptor produced.
+                            // FormatException: not valid base64. CryptographicException: too short
+                            // to contain a nonce + tag, or the AES-GCM authentication tag didn't
+                            // match (wrong key or tampered data). To the caller, all three mean the
+                            // same thing: this wasn't ciphertext this encryptor produced. Anything
+                            // else — a bug in IPropertyEncryptor itself — propagates unchanged.
                             throw new JsonException(
                                 $"'{declaringTypeName}.{propertyName}' is marked [Encrypted], but the incoming " +
                                 "value isn't valid ciphertext for the configured key. If this endpoint is meant " +

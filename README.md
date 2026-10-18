@@ -12,13 +12,20 @@ Companion repo for [Your Database Column Is Encrypted. Your JSON Response Isn't.
 
 - **`Encryption/EncryptedAttribute.cs`** — a plain marker attribute on a property.
 - **`Encryption/AesGcmPropertyEncryptor.cs`** — AES-GCM with a random 12-byte nonce per call, so encrypting the same value twice never produces the same ciphertext.
-- **`Serialization/EncryptionTypeInfoModifier.cs`** — the actual mechanism: skips non-`Object` contracts, walks `JsonTypeInfo.Properties`, finds every property with `[Encrypted]` via `AttributeProvider`, and rewrites its `Get`/`Set` delegates to encrypt/decrypt through `IPropertyEncryptor`. A property marked `[Encrypted]` on a non-`string` type throws `InvalidOperationException` at first use. A value that isn't valid ciphertext for the configured key — wrong format, wrong key, tampered data — throws a `JsonException` naming the exact type and property, instead of a raw crypto exception three frames down.
+- **`Serialization/EncryptionTypeInfoModifier.cs`** — the actual mechanism: skips non-`Object` contracts, walks `JsonTypeInfo.Properties`, finds every property with `[Encrypted]` via `AttributeProvider`, and rewrites its `Get`/`Set` delegates to encrypt/decrypt through `IPropertyEncryptor`. A property marked `[Encrypted]` on a non-`string` type throws `InvalidOperationException` at first use. A value that isn't valid ciphertext for the configured key — wrong format, too short, wrong key, tampered data — throws a `JsonException` naming the exact type and property, instead of a raw crypto exception three frames down; anything else (a bug in `IPropertyEncryptor` itself) still propagates unchanged.
+
+## Key management (demo scope)
+
+The AES-256 key in `appsettings.json` is here for one reason: so you can run this repo without standing up a secret store first. It is not how a real deployment should hold a key. Two things this demo deliberately leaves out, because they're deployment-specific, not `System.Text.Json`-specific:
+
+- **Where the key lives.** A real deployment reads it from a key vault or secret manager at startup, never from a file that gets checked into source control.
+- **What happens when it rotates.** This demo has exactly one key, ever. A real system needs to know which key encrypted which value — typically a short key identifier stored alongside the ciphertext — so old data stays decryptable after the active key changes. Losing the key entirely means the ciphertext it produced is permanently unreadable; there's no recovery path around that by design.
 
 ## Running it
 
 ```bash
-dotnet test                                      # 9 tests: leak check, round-trip, nested graph + collections,
-                                                  # fail-fast guard, plaintext-input and wrong-key failure modes
+dotnet test                                      # 11 tests: leak check, round-trip, nested graph + collections,
+                                                  # fail-fast guard, and five decryption failure modes
 dotnet run --project src/StjPropertyEncryption.Api   # API on the port printed to the console
 ```
 
@@ -41,9 +48,10 @@ src/StjPropertyEncryption.Api/
   Serialization/EncryptionTypeInfoModifier.cs     the JsonTypeInfo modifier itself
   Program.cs                                      /users (before) vs /secure/users (after)
 tests/StjPropertyEncryption.Tests/
-  EncryptionModifierTests.cs                      9 tests: the leak, the fix, nested/collection graphs,
-                                                   the misconfiguration guard, and the two failure modes
-                                                   (plaintext input, wrong-key ciphertext)
+  EncryptionModifierTests.cs                      11 tests: the leak, the fix, nested/collection graphs,
+                                                   the misconfiguration guard, and the failure modes —
+                                                   plaintext input, wrong-key ciphertext, a too-short
+                                                   payload, and a property with no setter
 ```
 
 ## License

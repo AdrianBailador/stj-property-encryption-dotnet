@@ -12,12 +12,13 @@ Companion repo for [Your Database Column Is Encrypted. Your JSON Response Isn't.
 
 - **`Encryption/EncryptedAttribute.cs`** — a plain marker attribute on a property.
 - **`Encryption/AesGcmPropertyEncryptor.cs`** — AES-GCM with a random 12-byte nonce per call, so encrypting the same value twice never produces the same ciphertext.
-- **`Serialization/EncryptionTypeInfoModifier.cs`** — the actual mechanism: walks `JsonTypeInfo.Properties`, finds every property with `[Encrypted]` via `AttributeProvider`, and rewrites its `Get`/`Set` delegates to encrypt/decrypt through `IPropertyEncryptor`. A property marked `[Encrypted]` on a non-`string` type throws `InvalidOperationException` at first use — a config mistake fails loudly, not silently.
+- **`Serialization/EncryptionTypeInfoModifier.cs`** — the actual mechanism: skips non-`Object` contracts, walks `JsonTypeInfo.Properties`, finds every property with `[Encrypted]` via `AttributeProvider`, and rewrites its `Get`/`Set` delegates to encrypt/decrypt through `IPropertyEncryptor`. A property marked `[Encrypted]` on a non-`string` type throws `InvalidOperationException` at first use. A value that isn't valid ciphertext for the configured key — wrong format, wrong key, tampered data — throws a `JsonException` naming the exact type and property, instead of a raw crypto exception three frames down.
 
 ## Running it
 
 ```bash
-dotnet test                                      # 6 tests: leak check, round-trip, nested graph, fail-fast guard
+dotnet test                                      # 9 tests: leak check, round-trip, nested graph + collections,
+                                                  # fail-fast guard, plaintext-input and wrong-key failure modes
 dotnet run --project src/StjPropertyEncryption.Api   # API on the port printed to the console
 ```
 
@@ -40,7 +41,9 @@ src/StjPropertyEncryption.Api/
   Serialization/EncryptionTypeInfoModifier.cs     the JsonTypeInfo modifier itself
   Program.cs                                      /users (before) vs /secure/users (after)
 tests/StjPropertyEncryption.Tests/
-  EncryptionModifierTests.cs                      6 tests covering the leak, the fix, and the misconfiguration
+  EncryptionModifierTests.cs                      9 tests: the leak, the fix, nested/collection graphs,
+                                                   the misconfiguration guard, and the two failure modes
+                                                   (plaintext input, wrong-key ciphertext)
 ```
 
 ## License

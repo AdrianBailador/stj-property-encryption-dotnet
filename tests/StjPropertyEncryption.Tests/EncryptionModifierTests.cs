@@ -90,13 +90,69 @@ public class EncryptionModifierTests
         Assert.Contains("requires a string property", ex.Message);
     }
 
-    private static IPropertyEncryptor CreateEncryptor()
+    [Fact]
+    public void Encrypted_options_round_trip_a_collection_of_encrypted_items()
+    {
+        var order = new Order
+        {
+            Id = 7,
+            Shipments =
+            [
+                new Shipment { TrackingCode = "TRK-1", RecipientEmail = "a@example.com" },
+                new Shipment { TrackingCode = "TRK-2", RecipientEmail = "b@example.com" },
+            ],
+        };
+
+        var json = JsonSerializer.Serialize(order, EncryptedOptions);
+
+        Assert.Contains("TRK-1", json);
+        Assert.DoesNotContain("a@example.com", json);
+        Assert.DoesNotContain("b@example.com", json);
+
+        var roundTripped = JsonSerializer.Deserialize<Order>(json, EncryptedOptions);
+
+        Assert.NotNull(roundTripped);
+        Assert.Equal(2, roundTripped!.Shipments.Count);
+        Assert.Equal("a@example.com", roundTripped.Shipments[0].RecipientEmail);
+        Assert.Equal("b@example.com", roundTripped.Shipments[1].RecipientEmail);
+    }
+
+    [Fact]
+    public void Deserializing_plaintext_input_as_an_encrypted_property_fails_clearly()
+    {
+        const string requestBody = """
+            {"id":42,"name":"Jane Doe","email":"not-actually-ciphertext","ssn":"078-05-1120",
+            "address":{"street":"1 Market St","city":"Dublin","postalCode":"D02 AF30"}}
+            """;
+
+        var ex = Assert.Throws<JsonException>(
+            () => JsonSerializer.Deserialize<User>(requestBody, EncryptedOptions));
+
+        Assert.Contains("isn't valid ciphertext", ex.Message);
+    }
+
+    [Fact]
+    public void Ciphertext_decrypted_with_the_wrong_key_fails_clearly_instead_of_returning_garbage()
+    {
+        var wrongKeyEncryptor = CreateEncryptor(key: "Zm9vYmFyYmF6cXV1eGNvcmdlZ3JhdWx0Z2FyYnk=");
+        var wrongKeyOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+                .WithAddedModifier(EncryptionTypeInfoModifier.Create(wrongKeyEncryptor)),
+        };
+
+        var json = JsonSerializer.Serialize(CreateUser(), EncryptedOptions);
+
+        var ex = Assert.Throws<JsonException>(
+            () => JsonSerializer.Deserialize<User>(json, wrongKeyOptions));
+
+        Assert.Contains("isn't valid ciphertext", ex.Message);
+    }
+
+    private static IPropertyEncryptor CreateEncryptor(string key = "Y1qgjUkxxytE5zyGHhQkBLDBf8iNKgtupRAe1v5SQnU=")
     {
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Encryption:Key"] = "Y1qgjUkxxytE5zyGHhQkBLDBf8iNKgtupRAe1v5SQnU="
-            })
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Encryption:Key"] = key })
             .Build();
 
         return new AesGcmPropertyEncryptor(configuration);
@@ -115,5 +171,20 @@ public class EncryptionModifierTests
     {
         [Encrypted]
         public required int Age { get; set; }
+    }
+
+    private sealed class Shipment
+    {
+        public required string TrackingCode { get; set; }
+
+        [Encrypted]
+        public required string RecipientEmail { get; set; }
+    }
+
+    private sealed class Order
+    {
+        public required int Id { get; set; }
+
+        public required List<Shipment> Shipments { get; set; }
     }
 }

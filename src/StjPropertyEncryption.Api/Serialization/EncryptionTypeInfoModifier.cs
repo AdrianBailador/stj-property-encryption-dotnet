@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using StjPropertyEncryption.Api.Encryption;
 
@@ -9,6 +10,13 @@ public static class EncryptionTypeInfoModifier
     {
         return typeInfo =>
         {
+            // Get/Set rewriting only makes sense for object contracts — a List<T> or
+            // Dictionary<TKey,TValue> contract has no comparable per-property hook.
+            if (typeInfo.Kind != JsonTypeInfoKind.Object)
+            {
+                return;
+            }
+
             foreach (var property in typeInfo.Properties)
             {
                 var isEncrypted = property.AttributeProvider
@@ -41,10 +49,38 @@ public static class EncryptionTypeInfoModifier
 
                 if (originalSet is not null)
                 {
+                    var propertyName = property.Name;
+                    var declaringTypeName = typeInfo.Type.Name;
+
                     property.Set = (instance, value) =>
                     {
                         var ciphertext = (string?)value;
-                        originalSet(instance, ciphertext is null ? null : encryptor.Decrypt(ciphertext));
+                        if (ciphertext is null)
+                        {
+                            originalSet(instance, null);
+                            return;
+                        }
+
+                        string plaintext;
+                        try
+                        {
+                            plaintext = encryptor.Decrypt(ciphertext);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Covers invalid base64, a too-short payload, and an AES-GCM
+                            // authentication tag mismatch (wrong key or tampered data) alike —
+                            // to the caller, all three mean the same thing: this wasn't
+                            // ciphertext this encryptor produced.
+                            throw new JsonException(
+                                $"'{declaringTypeName}.{propertyName}' is marked [Encrypted], but the incoming " +
+                                "value isn't valid ciphertext for the configured key. If this endpoint is meant " +
+                                "to accept plaintext input, don't bind its request body with the encrypting " +
+                                "resolver — only use it for values round-tripped from this API's own responses.",
+                                ex);
+                        }
+
+                        originalSet(instance, plaintext);
                     };
                 }
             }
